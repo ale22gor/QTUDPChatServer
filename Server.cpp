@@ -10,14 +10,17 @@ Server::Server(QObject *parent) : QObject(parent)
     connect(udpSocket, SIGNAL(readyRead()),this, SLOT(readMessage()));
 }
 
-void Server::sendMessage(QByteArray message)
+void Server::sendMessage(qint8 type,QByteArray message)
 {
-    QNetworkDatagram datagram;
-    datagram.setData(message);
+    QByteArray data;
+    data.append(type);
+    data.append(message);
+
+    qDebug()<<"send:"<< data;
+
 
     for (auto client:clients) {
-        datagram.setDestination(client.m_clientAddress,client.m_clientPort);
-        udpSocket->writeDatagram(datagram);
+        udpSocket->writeDatagram(data,client.m_clientAddress,client.m_clientPort);
     }
 
 }
@@ -26,7 +29,7 @@ void Server::readMessage()
 {
     while (udpSocket->hasPendingDatagrams()) {
         QNetworkDatagram datagram = udpSocket->receiveDatagram();
-        QByteArray message  = datagram.data();
+        QByteArray message {datagram.data()};
         qint8 type;
 
         type = message.mid(0,1).toInt();
@@ -37,52 +40,51 @@ void Server::readMessage()
         qDebug()<<"type:" << type;
         qDebug()<<"message:" << message;
 
-        if(type == 0){
+        if(type == 0 || type == 8){
 
-            QHostAddress clientAddress = datagram.senderAddress();
+            QHostAddress clientAddress {datagram.senderAddress()};
             quint16 clientPort = datagram.senderPort();
-            QString clientName = message.mid(1);
+            QString clientName {message};
 
             Client client{clientAddress,clientPort,clientName};
+            qDebug()<<"clientName:" << clientName;
 
+
+            //refactor !!!!!!!!! this
             auto oldInfo = std::find_if(clients.begin(),clients.end(),
-                                  [&] (Client const& c)
-            {return (c.m_name == clientName) &&
-                    (c.m_clientPort != clientPort || c.m_clientAddress != clientAddress); });
+                                        [&clientName] (Client const& c)
+            {return (c.m_name == clientName) ; });
+
+            QByteArray data;
+
+            data.append(clientAddress.toString());
+            data.append('|');
+            data.append(QString::number(clientPort));
+            data.append('|');
+            data.append(message);
 
 
             if(oldInfo != clients.end()){
-                oldInfo->m_clientPort = clientPort;
-                oldInfo->m_clientAddress = clientAddress;
+                if(type != 8 && oldInfo->m_clientPort != clientPort || oldInfo->m_clientAddress != clientAddress){
+                    oldInfo->m_clientPort = clientPort;
+                    oldInfo->m_clientAddress = clientAddress;
 
-                //send new to other
-                //check info
-                //update info if changed
-                //send new to other
+                    //notify other clients (info changed)
+                    sendMessage('7',data);
+
+                }else {
+                    //check online status
+                    oldInfo->setOnline();
+                    //notify other clients (went online)
+                    sendMessage('8',data);
+                }
 
             }else{
-                QByteArray data;
 
-                data.append('0');
-                data.append(clientAddress.toString());
-                data.append('|');
-                data.append(QString::number(datagram.senderPort()));
-                data.append('|');
-                data.append(message);
-
-                qDebug() << data;
-                //qDebug() << data.mid(1,4);
-
-                datagram.setData(data);
-                sendMessage(data);
+                sendMessage('0',data);
                 clients.push_back(client);
-                //add client
-                //send new to other
-
             }
-
         }
-
     }
 }
 

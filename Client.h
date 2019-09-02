@@ -12,6 +12,12 @@ struct Client
     quint16 m_clientPort;
     QString m_name;
 
+    bool isOnline(){return online;}
+    void setOnline(){online = !online;}
+
+private:
+    bool online;
+
 };
 
 #endif // CLIENT_H
