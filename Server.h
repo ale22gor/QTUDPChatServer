@@ -15,7 +15,8 @@ class Server : public QObject
     Q_OBJECT
 public:
     explicit Server(QObject *parent = nullptr);
-    void sendMessage(qint8, QByteArray);
+    void sendMessage(qint8, Client);
+
 
 
 signals:

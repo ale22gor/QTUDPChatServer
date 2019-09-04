@@ -10,17 +10,57 @@ Server::Server(QObject *parent) : QObject(parent)
     connect(udpSocket, SIGNAL(readyRead()),this, SLOT(readMessage()));
 }
 
-void Server::sendMessage(qint8 type,QByteArray message)
+
+
+void Server::sendMessage(qint8 type,Client sender)
 {
     QByteArray data;
-    data.append(type);
-    data.append(message);
-
-    qDebug()<<"send:"<< data;
-
-
     for (auto client:clients) {
-        udpSocket->writeDatagram(data,client.m_clientAddress,client.m_clientPort);
+        QByteArray data;
+
+        QHostAddress sendToAddress;
+        quint16 sendToPort;
+
+        QHostAddress dataAddress;
+        quint16 dataPort;
+        QString dataName;
+
+
+        if(client.isOnline() && client.m_name != sender.m_name){
+            sendToAddress = client.m_clientAddress;
+            sendToPort = client.m_clientPort;
+
+            dataAddress = sender.m_clientAddress;
+            dataPort = sender.m_clientPort;
+            dataName = sender.m_name;
+
+            data.append(type);
+
+        }else if(type != 8 && client.m_name != sender.m_name) {
+            sendToAddress = sender.m_clientAddress;
+            sendToPort = sender.m_clientPort;
+
+            dataAddress = client.m_clientAddress;
+            dataPort = client.m_clientPort;
+            dataName = client.m_name;
+
+
+            data.append('1');
+
+        }else {
+            continue;
+        }
+        data.append(dataAddress.toString());
+        data.append('|');
+        data.append(QString::number(dataPort));
+        data.append('|');
+        data.append(dataName);
+
+        qDebug()<<"send:"<< data;
+
+        udpSocket->writeDatagram(data,sendToAddress,sendToPort);
+
+
     }
 
 }
@@ -33,58 +73,61 @@ void Server::readMessage()
         qint8 type;
 
         type = message.mid(0,1).toInt();
+
         message.remove(0,1);
+
+        QString clientName {message};
+
+        QHostAddress clientAddress {datagram.senderAddress()};
+        quint16 clientPort = datagram.senderPort();
+
+        Client client{clientAddress,clientPort,clientName};
 
         qDebug()<<"ip:" << datagram.senderAddress();
         qDebug()<<"port:" << datagram.senderPort();
         qDebug()<<"type:" << type;
         qDebug()<<"message:" << message;
+        qDebug()<<"clientName:" << clientName;
 
-        if(type == 0 || type == 8){
+        //refactor !!!!!!!!! this
+        auto oldInfo = std::find_if(clients.begin(),clients.end(),
+                                    [&clientName] (Client const& c)
+        {return (c.m_name == clientName) ; });
 
-            QHostAddress clientAddress {datagram.senderAddress()};
-            quint16 clientPort = datagram.senderPort();
-            QString clientName {message};
-
-            Client client{clientAddress,clientPort,clientName};
-            qDebug()<<"clientName:" << clientName;
-
-
-            //refactor !!!!!!!!! this
-            auto oldInfo = std::find_if(clients.begin(),clients.end(),
-                                        [&clientName] (Client const& c)
-            {return (c.m_name == clientName) ; });
-
-            QByteArray data;
-
-            data.append(clientAddress.toString());
-            data.append('|');
-            data.append(QString::number(clientPort));
-            data.append('|');
-            data.append(message);
-
-
-            if(oldInfo != clients.end()){
-                if(type != 8 && oldInfo->m_clientPort != clientPort || oldInfo->m_clientAddress != clientAddress){
-                    oldInfo->m_clientPort = clientPort;
-                    oldInfo->m_clientAddress = clientAddress;
-
-                    //notify other clients (info changed)
-                    sendMessage('7',data);
-
-                }else {
-                    //check online status
-                    oldInfo->setOnline();
-                    //notify other clients (went online)
-                    sendMessage('8',data);
-                }
-
-            }else{
-
-                sendMessage('0',data);
-                clients.push_back(client);
+        if(type == 8){
+            if(oldInfo->isOnline()&&
+                    oldInfo->m_clientAddress == clientAddress &&
+                    oldInfo->m_clientPort == clientPort){
+                //check online status
+                oldInfo->setOnline();
+                //notify other clients (went online)
+                sendMessage('8',client);
             }
+            continue;
         }
+
+        if(oldInfo == clients.end()){
+            sendMessage('0',client);
+            clients.push_back(client);
+            continue;
+        }
+        if(!oldInfo->isOnline()){
+            //check online status
+            if(oldInfo->m_clientPort != clientPort || oldInfo->m_clientAddress != clientAddress){
+                oldInfo->m_clientPort = clientPort;
+                oldInfo->m_clientAddress = clientAddress;
+
+                //notify other clients (info changed)
+                sendMessage('7',client);
+
+            }else {
+                //notify other clients (went online)
+                sendMessage('8',client);
+            }
+            oldInfo->setOnline();
+
+        }
+
     }
 }
 
