@@ -3,10 +3,12 @@
 #include <QDebug>
 #include <algorithm>
 
-Server::Server(QObject *parent) : QObject(parent)
+
+Server::Server(quint16 port,QObject *parent) : QObject(parent)
 {
     udpSocket = new QUdpSocket(this);
-    udpSocket->bind(QHostAddress::LocalHost, 3228);
+
+    udpSocket->bind(QHostAddress{"10.166.0.2"}, port);
     connect(udpSocket, SIGNAL(readyRead()),this, SLOT(readMessage()));
 }
 
@@ -16,7 +18,9 @@ void Server::sendMessage(qint8 type,Client sender)
 {
     QByteArray data;
     for (auto client:clients) {
-        QByteArray data;
+        QByteArray dataToClient;
+        QByteArray dataBackToSender;
+
 
         QHostAddress sendToAddress;
         quint16 sendToPort;
@@ -36,7 +40,18 @@ void Server::sendMessage(qint8 type,Client sender)
 
             data.append(type);
 
-        }else if(type != 8 && client.m_name != sender.m_name) {
+            data.append(dataAddress.toString());
+            data.append('|');
+            data.append(QString::number(dataPort));
+            data.append('|');
+
+            data.append(dataName);
+
+            udpSocket->writeDatagram(data,sendToAddress,sendToPort);
+
+
+        }
+        if(type != 8 && client.m_name != sender.m_name) {
             sendToAddress = sender.m_clientAddress;
             sendToPort = sender.m_clientPort;
 
@@ -44,26 +59,27 @@ void Server::sendMessage(qint8 type,Client sender)
             dataPort = client.m_clientPort;
             dataName = client.m_name;
 
+            if(client.isOnline())
+                dataBackToSender.append('0');
+            else
+                dataBackToSender.append('1');
 
-            data.append('1');
+            dataBackToSender.append(dataAddress.toString());
+            dataBackToSender.append('|');
+            dataBackToSender.append(QString::number(dataPort));
+            dataBackToSender.append('|');
 
-        }else {
-            continue;
+            dataBackToSender.append(dataName);
+
+            udpSocket->writeDatagram(dataBackToSender,sendToAddress,sendToPort);
+
         }
-        data.append(dataAddress.toString());
-        data.append('|');
-        data.append(QString::number(dataPort));
-        data.append('|');
-        data.append(dataName);
-
-        qDebug()<<"send:"<< data;
-
-        udpSocket->writeDatagram(data,sendToAddress,sendToPort);
-
 
     }
 
 }
+
+
 
 void Server::readMessage()
 {
@@ -93,6 +109,10 @@ void Server::readMessage()
         auto oldInfo = std::find_if(clients.begin(),clients.end(),
                                     [&clientName] (Client const& c)
         {return (c.m_name == clientName) ; });
+
+        if(type == 3){
+            continue;
+        }
 
         if(type == 8){
             if(oldInfo->isOnline()&&
