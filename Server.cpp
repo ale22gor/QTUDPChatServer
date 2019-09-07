@@ -2,13 +2,25 @@
 #include <QNetworkDatagram>
 #include <QDebug>
 #include <algorithm>
+#include <QDataStream>
+#include <QNetworkInterface>
 
+enum  MessageTypes{ HelloOnline, HelloOffline , Message , Ping ,
+                         SendPingTo ,SomeFeature , AnotherFeature ,
+                         UpdateInfo , OffOnLine , ExitChat };
 
 Server::Server(quint16 port,QObject *parent) : QObject(parent)
 {
     udpSocket = new QUdpSocket(this);
 
-    udpSocket->bind(QHostAddress{"10.166.0.2"}, port);
+    const QHostAddress &localhost = QHostAddress(QHostAddress::LocalHost);
+    QHostAddress localIpAddress;
+    for (const QHostAddress &address: QNetworkInterface::allAddresses()) {
+        if (address.protocol() == QAbstractSocket::IPv4Protocol && address != localhost)
+            localIpAddress = address;
+    }
+
+    udpSocket->bind(localIpAddress, port);
     connect(udpSocket, SIGNAL(readyRead()),this, SLOT(readMessage()));
 }
 
@@ -51,7 +63,8 @@ void Server::sendMessage(qint8 type,Client sender)
 
 
         }
-        if(type != 8 && client.m_name != sender.m_name) {
+        //change if and logick
+        if((type == OffOnLine && sender.isOnline()) || client.m_name != sender.m_name) {
             sendToAddress = sender.m_clientAddress;
             sendToPort = sender.m_clientPort;
 
@@ -60,9 +73,9 @@ void Server::sendMessage(qint8 type,Client sender)
             dataName = client.m_name;
 
             if(client.isOnline())
-                dataBackToSender.append('0');
+                dataBackToSender.append(HelloOnline);
             else
-                dataBackToSender.append('1');
+                dataBackToSender.append(HelloOffline);
 
             dataBackToSender.append(dataAddress.toString());
             dataBackToSender.append('|');
@@ -88,7 +101,10 @@ void Server::readMessage()
         QByteArray message {datagram.data()};
         qint8 type;
 
-        type = message.mid(0,1).toInt();
+        QDataStream dataStream(message);
+        dataStream >> type;
+
+        //type = message.mid(0,1).toInt();
 
         message.remove(0,1);
 
@@ -105,48 +121,52 @@ void Server::readMessage()
         qDebug()<<"message:" << message;
         qDebug()<<"clientName:" << clientName;
 
-        //refactor !!!!!!!!! this
         auto oldInfo = std::find_if(clients.begin(),clients.end(),
                                     [&clientName] (Client const& c)
         {return (c.m_name == clientName) ; });
 
-        if(type == 3){
+        if(type == Ping){
             continue;
         }
 
-        if(type == 8){
+
+
+        if(oldInfo == clients.end()){
+            sendMessage(HelloOnline,client);
+            clients.push_back(client);
+            continue;
+        }
+
+        if(!oldInfo->isOnline()){
+            //check online status
+            oldInfo->setOnline();
+
+            if(oldInfo->m_clientPort != clientPort || oldInfo->m_clientAddress != clientAddress){
+                oldInfo->m_clientPort = clientPort;
+                oldInfo->m_clientAddress = clientAddress;
+
+                //notify other clients (info changed)
+                sendMessage(UpdateInfo,client);
+
+            }else {
+                //notify other clients (went online)
+                sendMessage(OffOnLine,client);
+            }
+
+        }
+
+        if(type == OffOnLine){
             if(oldInfo->isOnline()&&
                     oldInfo->m_clientAddress == clientAddress &&
                     oldInfo->m_clientPort == clientPort){
                 //check online status
                 oldInfo->setOnline();
                 //notify other clients (went online)
-                sendMessage('8',client);
+                sendMessage(OffOnLine,client);
             }
             continue;
         }
 
-        if(oldInfo == clients.end()){
-            sendMessage('0',client);
-            clients.push_back(client);
-            continue;
-        }
-        if(!oldInfo->isOnline()){
-            //check online status
-            if(oldInfo->m_clientPort != clientPort || oldInfo->m_clientAddress != clientAddress){
-                oldInfo->m_clientPort = clientPort;
-                oldInfo->m_clientAddress = clientAddress;
-
-                //notify other clients (info changed)
-                sendMessage('7',client);
-
-            }else {
-                //notify other clients (went online)
-                sendMessage('8',client);
-            }
-            oldInfo->setOnline();
-
-        }
 
     }
 }
