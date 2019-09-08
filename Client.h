@@ -7,16 +7,19 @@
 struct Client
 {
     Client(QHostAddress, quint16, QString);
+    Client(Client&& );
+    Client(const Client&);
 
     QHostAddress m_clientAddress;
     quint16 m_clientPort;
     QString m_name;
 
-    bool isOnline(){return online;}
     void setOnline(){online = !online;}
+    bool isOnline() const {return online;}
 
 private:
     bool online;
+
 
 };
 

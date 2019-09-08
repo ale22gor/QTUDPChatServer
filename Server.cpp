@@ -26,7 +26,7 @@ Server::Server(quint16 port,QObject *parent) : QObject(parent)
 
 
 
-void Server::sendMessage(qint8 type,Client sender)
+void Server::sendMessage(const qint8 type, const Client sender)
 {
     QByteArray data;
     for (auto client:clients) {
@@ -63,8 +63,10 @@ void Server::sendMessage(qint8 type,Client sender)
 
 
         }
-        //change if and logick
-        if((type == OffOnLine && sender.isOnline()) || client.m_name != sender.m_name) {
+        if(client.m_name != sender.m_name) {
+            if(type != OffOnLine && !sender.isOnline())
+               continue;
+
             sendToAddress = sender.m_clientAddress;
             sendToPort = sender.m_clientPort;
 
@@ -104,7 +106,9 @@ void Server::readMessage()
         QDataStream dataStream(message);
         dataStream >> type;
 
-        //type = message.mid(0,1).toInt();
+        if(type == Ping){
+            continue;
+        }
 
         message.remove(0,1);
 
@@ -125,9 +129,7 @@ void Server::readMessage()
                                     [&clientName] (Client const& c)
         {return (c.m_name == clientName) ; });
 
-        if(type == Ping){
-            continue;
-        }
+
 
 
 
@@ -138,18 +140,16 @@ void Server::readMessage()
         }
 
         if(!oldInfo->isOnline()){
-            //check online status
+
             oldInfo->setOnline();
 
             if(oldInfo->m_clientPort != clientPort || oldInfo->m_clientAddress != clientAddress){
                 oldInfo->m_clientPort = clientPort;
                 oldInfo->m_clientAddress = clientAddress;
 
-                //notify other clients (info changed)
                 sendMessage(UpdateInfo,client);
 
             }else {
-                //notify other clients (went online)
                 sendMessage(OffOnLine,client);
             }
 
@@ -159,9 +159,7 @@ void Server::readMessage()
             if(oldInfo->isOnline()&&
                     oldInfo->m_clientAddress == clientAddress &&
                     oldInfo->m_clientPort == clientPort){
-                //check online status
                 oldInfo->setOnline();
-                //notify other clients (went online)
                 sendMessage(OffOnLine,client);
             }
             continue;

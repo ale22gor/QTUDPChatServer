@@ -15,7 +15,7 @@ class Server : public QObject
     Q_OBJECT
 public:
     explicit Server(quint16 port = 3228,QObject *parent = nullptr);
-    void sendMessage(qint8, Client);
+    void sendMessage(const qint8, const Client);
 
 
 
