@@ -152,6 +152,9 @@ void Server::readMessage()
             break;
         }
         case OffOnLine:{
+            if(oldInfo == clients.end())
+                continue;
+
             if(oldInfo->isOnline()&&
                     oldInfo->m_clientAddress == clientAddress &&
                     oldInfo->m_clientPort == clientPort){
